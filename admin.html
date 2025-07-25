@@ -70,9 +70,18 @@
             color: white;
         }
 
+        .btn-success {
+            background: linear-gradient(45deg, #2ed573, #1e90ff);
+            color: white;
+        }
+
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn:active {
+            transform: translateY(0);
         }
 
         .admin-container {
@@ -187,6 +196,13 @@
             color: white;
         }
 
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
         .preview-panel {
             grid-column: span 2;
         }
@@ -289,6 +305,26 @@
             margin-top: 20px;
         }
 
+        /* Save button animation */
+        .btn-saving {
+            background: linear-gradient(45deg, #ffa726, #ff9800) !important;
+            pointer-events: none;
+        }
+
+        .btn-saved {
+            background: linear-gradient(45deg, #4caf50, #2e7d32) !important;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .btn-pulse {
+            animation: pulse 0.3s ease-in-out;
+        }
+
         @media (max-width: 768px) {
             .admin-container {
                 grid-template-columns: 1fr;
@@ -304,6 +340,10 @@
             
             .header h1 {
                 font-size: 24px;
+            }
+
+            .button-group {
+                flex-direction: column;
             }
         }
     </style>
@@ -366,9 +406,14 @@
             <div id="linksList">
                 <!-- Links will be populated here -->
             </div>
-            <button onclick="addNewLink()" class="btn btn-primary">
-                <i class="fas fa-plus"></i> Add New Link
-            </button>
+            <div class="button-group">
+                <button onclick="addNewLink()" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add New Link
+                </button>
+                <button id="saveLinksBtn" class="btn btn-success">
+                    <i class="fas fa-save"></i> Save Links
+                </button>
+            </div>
             <div id="linksSuccess" class="success-message">
                 <i class="fas fa-check"></i> Links updated successfully!
             </div>
@@ -408,6 +453,9 @@
             { icon: 'fas fa-envelope', title: 'Contact Me', url: '#' }
         ];
 
+        // Track if there are unsaved changes
+        let hasUnsavedChanges = false;
+
         // Load saved data
         function loadSavedData() {
             const savedData = JSON.parse(localStorage.getItem('linktreeData') || '{}');
@@ -424,6 +472,8 @@
             
             renderLinks();
             updatePreview();
+            hasUnsavedChanges = false;
+            updateSaveButtonState();
         }
 
         // Render links in admin panel
@@ -454,11 +504,12 @@
                         const index = parseInt(this.dataset.index);
                         const field = this.dataset.field;
                         updateLink(index, field, this.value);
+                        hasUnsavedChanges = true;
+                        updateSaveButtonState();
                     });
                     
                     input.addEventListener('blur', function() {
-                        saveData();
-                        showSuccess('linksSuccess');
+                        // Auto-save is disabled, only manual save now
                     });
                 });
                 
@@ -486,8 +537,8 @@
             });
             renderLinks();
             updatePreview();
-            saveData();
-            showSuccess('linksSuccess');
+            hasUnsavedChanges = true;
+            updateSaveButtonState();
         }
 
         // Remove link
@@ -496,8 +547,8 @@
                 linksData.splice(index, 1);
                 renderLinks();
                 updatePreview();
-                saveData();
-                showSuccess('linksSuccess');
+                hasUnsavedChanges = true;
+                updateSaveButtonState();
             }
         }
 
@@ -531,7 +582,52 @@
                 links: linksData
             };
             localStorage.setItem('linktreeData', JSON.stringify(data));
+            hasUnsavedChanges = false;
+            updateSaveButtonState();
         }
+
+        // Update save button state
+        function updateSaveButtonState() {
+            const saveBtn = document.getElementById('saveLinksBtn');
+            if (hasUnsavedChanges) {
+                saveBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Save Changes';
+                saveBtn.classList.remove('btn-success');
+                saveBtn.classList.add('btn-primary');
+            } else {
+                saveBtn.innerHTML = '<i class="fas fa-check"></i> All Saved';
+                saveBtn.classList.remove('btn-primary');
+                saveBtn.classList.add('btn-success');
+            }
+        }
+
+        // Save links button functionality
+        document.getElementById('saveLinksBtn').addEventListener('click', function() {
+            const btn = this;
+            
+            // Show saving state
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            btn.classList.add('btn-saving');
+            
+            // Simulate save process (you can add actual save logic here)
+            setTimeout(() => {
+                saveData();
+                
+                // Show saved state
+                btn.innerHTML = '<i class="fas fa-check"></i> Saved!';
+                btn.classList.remove('btn-saving');
+                btn.classList.add('btn-saved', 'btn-pulse');
+                
+                // Show success message
+                showSuccess('linksSuccess');
+                
+                // Reset button after 2 seconds
+                setTimeout(() => {
+                    btn.classList.remove('btn-saved', 'btn-pulse');
+                    updateSaveButtonState();
+                }, 2000);
+                
+            }, 1000);
+        });
 
         // Show success message
         function showSuccess(elementId) {
@@ -595,8 +691,8 @@
                         linksData.splice(index, 0, draggedItem);
                         renderLinks();
                         updatePreview();
-                        saveData();
-                        showSuccess('linksSuccess');
+                        hasUnsavedChanges = true;
+                        updateSaveButtonState();
                     }
                     draggedIndex = null;
                 });
@@ -643,8 +739,15 @@
             }
         });
 
-        // Auto-save every 30 seconds
-        setInterval(saveData, 30000);
+        // Auto-save every 30 seconds (for profile only)
+        setInterval(() => {
+            const data = {
+                name: document.getElementById('profileName').value,
+                bio: document.getElementById('profileBio').value,
+                links: linksData
+            };
+            localStorage.setItem('linktreeData', JSON.stringify(data));
+        }, 30000);
 
         // Session timeout check (1 hour)
         setInterval(() => {
@@ -664,8 +767,7 @@
             // Ctrl+S to save
             if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
-                saveData();
-                showSuccess('profileSuccess');
+                document.getElementById('saveLinksBtn').click();
             }
             
             // Ctrl+N to add new link
@@ -680,17 +782,22 @@
             }
         });
 
+        // Prevent accidental page refresh when there are unsaved changes
+        window.addEventListener('beforeunload', function(e) {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+                return e.returnValue;
+            }
+            saveData(); // Save data before leaving
+        });
+
         // Initialize
         loadSavedData();
 
         // Add panel animations
         document.querySelectorAll('.panel').forEach((panel, index) => {
             panel.style.animationDelay = `${index * 0.1}s`;
-        });
-
-        // Prevent accidental page refresh
-        window.addEventListener('beforeunload', function(e) {
-            saveData(); // Save data before leaving
         });
     </script>
 </body>
