@@ -65,6 +65,11 @@
             color: white;
         }
 
+        .btn-danger {
+            background: linear-gradient(45deg, #ff4757, #ff3742);
+            color: white;
+        }
+
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
@@ -154,6 +159,17 @@
             display: flex;
             align-items: center;
             gap: 15px;
+            position: relative;
+        }
+
+        .link-item.dragging {
+            opacity: 0.5;
+        }
+
+        .drag-handle {
+            cursor: move;
+            color: rgba(255, 255, 255, 0.6);
+            padding: 5px;
         }
 
         .link-item input {
@@ -166,7 +182,7 @@
             font-size: 12px;
         }
 
-        .btn-danger {
+        .link-item .btn-danger {
             background: #ff4757;
             color: white;
         }
@@ -240,6 +256,39 @@
             display: none;
         }
 
+        /* Logout confirmation modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin: 15% auto;
+            padding: 30px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            color: white;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
         @media (max-width: 768px) {
             .admin-container {
                 grid-template-columns: 1fr;
@@ -266,9 +315,25 @@
             <a href="index.html" class="btn btn-secondary">
                 <i class="fas fa-eye"></i> View LinkTree
             </a>
-            <button onclick="logout()" class="btn btn-danger">
+            <button id="logoutBtn" class="btn btn-danger">
                 <i class="fas fa-sign-out-alt"></i> Logout
             </button>
+        </div>
+    </div>
+
+    <!-- Logout Confirmation Modal -->
+    <div id="logoutModal" class="modal">
+        <div class="modal-content">
+            <h3><i class="fas fa-sign-out-alt"></i> Confirm Logout</h3>
+            <p style="margin: 20px 0;">Are you sure you want to logout? Any unsaved changes will be lost.</p>
+            <div class="modal-buttons">
+                <button id="confirmLogout" class="btn btn-danger">
+                    <i class="fas fa-check"></i> Yes, Logout
+                </button>
+                <button id="cancelLogout" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+            </div>
         </div>
     </div>
 
@@ -284,7 +349,7 @@
                 <div class="form-group">
                     <label for="profileBio">Bio</label>
                     <textarea id="profileBio" rows="3" placeholder="Your bio...">✨ Content Creator & Digital Artist
-📍 Based in Your City</textarea
+📍 Based in Your City</textarea>
                 </div>
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-save"></i> Save Profile
@@ -353,7 +418,7 @@
             if (savedData.bio) {
                 document.getElementById('profileBio').value = savedData.bio;
             }
-            if (savedData.links) {
+            if (savedData.links && savedData.links.length > 0) {
                 linksData = savedData.links;
             }
             
@@ -369,23 +434,47 @@
             linksData.forEach((link, index) => {
                 const linkItem = document.createElement('div');
                 linkItem.className = 'link-item';
+                linkItem.draggable = true;
                 linkItem.innerHTML = `
-                    <input type="text" placeholder="Icon class (e.g., fab fa-youtube)" value="${link.icon}" onchange="updateLink(${index}, 'icon', this.value)">
-                    <input type="text" placeholder="Link title" value="${link.title}" onchange="updateLink(${index}, 'title', this.value)">
-                    <input type="url" placeholder="URL" value="${link.url}" onchange="updateLink(${index}, 'url', this.value)">
+                    <div class="drag-handle">
+                        <i class="fas fa-grip-vertical"></i>
+                    </div>
+                    <input type="text" placeholder="Icon class (e.g., fab fa-youtube)" value="${link.icon}" data-index="${index}" data-field="icon">
+                    <input type="text" placeholder="Link title" value="${link.title}" data-index="${index}" data-field="title">
+                    <input type="url" placeholder="URL" value="${link.url}" data-index="${index}" data-field="url">
                     <button class="btn btn-danger" onclick="removeLink(${index})">
                         <i class="fas fa-trash"></i>
                     </button>
                 `;
+                
+                // Add event listeners for input changes
+                const inputs = linkItem.querySelectorAll('input');
+                inputs.forEach(input => {
+                    input.addEventListener('input', function() {
+                        const index = parseInt(this.dataset.index);
+                        const field = this.dataset.field;
+                        updateLink(index, field, this.value);
+                    });
+                    
+                    input.addEventListener('blur', function() {
+                        saveData();
+                        showSuccess('linksSuccess');
+                    });
+                });
+                
                 linksList.appendChild(linkItem);
             });
+            
+            // Re-enable drag and drop
+            setupDragAndDrop();
         }
 
         // Update link data
         function updateLink(index, field, value) {
-            linksData[index][field] = value;
-            updatePreview();
-            saveData();
+            if (linksData[index]) {
+                linksData[index][field] = value;
+                updatePreview();
+            }
         }
 
         // Add new link
@@ -398,6 +487,7 @@
             renderLinks();
             updatePreview();
             saveData();
+            showSuccess('linksSuccess');
         }
 
         // Remove link
@@ -460,18 +550,98 @@
             showSuccess('profileSuccess');
         });
 
-        // Real-time preview updates
-        document.getElementById('profileName').addEventListener('input', updatePreview);
-        document.getElementById('profileBio').addEventListener('input', updatePreview);
+        // Real-time preview updates for profile
+        document.getElementById('profileName').addEventListener('input', function() {
+            updatePreview();
+        });
 
-        // Logout function
-        function logout() {
-            if (confirm('Are you sure you want to logout?')) {
-                localStorage.removeItem('isLoggedIn');
-                localStorage.removeItem('loginTime');
-                window.location.href = 'login.html';
-            }
+        document.getElementById('profileBio').addEventListener('input', function() {
+            updatePreview();
+        });
+
+        // Auto-save profile changes
+        document.getElementById('profileName').addEventListener('blur', function() {
+            saveData();
+        });
+
+        document.getElementById('profileBio').addEventListener('blur', function() {
+            saveData();
+        });
+
+        // Setup drag and drop functionality
+        function setupDragAndDrop() {
+            let draggedIndex = null;
+            const linkItems = document.querySelectorAll('.link-item');
+            
+            linkItems.forEach((item, index) => {
+                item.addEventListener('dragstart', function(e) {
+                    draggedIndex = index;
+                    this.classList.add('dragging');
+                });
+                
+                item.addEventListener('dragend', function(e) {
+                    this.classList.remove('dragging');
+                });
+                
+                item.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                });
+                
+                item.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    if (draggedIndex !== null && draggedIndex !== index) {
+                        const draggedItem = linksData[draggedIndex];
+                        linksData.splice(draggedIndex, 1);
+                        linksData.splice(index, 0, draggedItem);
+                        renderLinks();
+                        updatePreview();
+                        saveData();
+                        showSuccess('linksSuccess');
+                    }
+                    draggedIndex = null;
+                });
+            });
         }
+
+        // Logout functionality
+        const logoutBtn = document.getElementById('logoutBtn');
+        const logoutModal = document.getElementById('logoutModal');
+        const confirmLogout = document.getElementById('confirmLogout');
+        const cancelLogout = document.getElementById('cancelLogout');
+
+        // Show logout modal
+        logoutBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            logoutModal.style.display = 'block';
+        });
+
+        // Confirm logout
+        confirmLogout.addEventListener('click', function() {
+            // Save current data before logout
+            saveData();
+            
+            // Clear authentication
+            localStorage.removeItem('isLoggedIn');
+            localStorage.removeItem('loginTime');
+            
+            // Show logout message
+            alert('You have been logged out successfully!');
+            
+            // Redirect to login page
+            window.location.href = 'login.html';
+        });
+
+        // Cancel logout
+        cancelLogout.addEventListener('click', function() {
+            logoutModal.style.display = 'none';
+        });
+
+        // Close modal when clicking outside
+        window.addEventListener('click', function(e) {
+            if (e.target === logoutModal) {
+                logoutModal.style.display = 'none';
+            }
+        });
 
         // Auto-save every 30 seconds
         setInterval(saveData, 30000);
@@ -483,19 +653,13 @@
             
             if (currentTime - loginTime > 3600000) {
                 alert('Session expired. Please login again.');
-                logout();
+                localStorage.removeItem('isLoggedIn');
+                localStorage.removeItem('loginTime');
+                window.location.href = 'login.html';
             }
         }, 60000);
 
-        // Initialize
-        loadSavedData();
-
-        // Add some admin panel animations
-        document.querySelectorAll('.panel').forEach((panel, index) => {
-            panel.style.animationDelay = `${index * 0.1}s`;
-        });
-
-        // Add keyboard shortcuts
+        // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
             // Ctrl+S to save
             if (e.ctrlKey && e.key === 's') {
@@ -509,47 +673,25 @@
                 e.preventDefault();
                 addNewLink();
             }
+
+            // Escape to close modal
+            if (e.key === 'Escape') {
+                logoutModal.style.display = 'none';
+            }
         });
 
-        // Add drag and drop functionality for reordering links
-        let draggedIndex = null;
+        // Initialize
+        loadSavedData();
 
-        function makeLinksDraggable() {
-            const linkItems = document.querySelectorAll('.link-item');
-            linkItems.forEach((item, index) => {
-                item.draggable = true;
-                item.style.cursor = 'move';
-                
-                item.addEventListener('dragstart', (e) => {
-                    draggedIndex = index;
-                    item.style.opacity = '0.5';
-                });
-                
-                item.addEventListener('dragend', (e) => {
-                    item.style.opacity = '1';
-                });
-                
-                item.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                });
-                
-                item.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    if (draggedIndex !== null && draggedIndex !== index) {
-                        const draggedItem = linksData[draggedIndex];
-                        linksData.splice(draggedIndex, 1);
-                        linksData.splice(index, 0, draggedItem);
-                        renderLinks();
-                        updatePreview();
-                        saveData();
-                        makeLinksDraggable(); // Re-enable dragging
-                    }
-                });
-            });
-        }
+        // Add panel animations
+        document.querySelectorAll('.panel').forEach((panel, index) => {
+            panel.style.animationDelay = `${index * 0.1}s`;
+        });
 
-        // Enable dragging after rendering
-        setTimeout(makeLinksDraggable, 100);
+        // Prevent accidental page refresh
+        window.addEventListener('beforeunload', function(e) {
+            saveData(); // Save data before leaving
+        });
     </script>
 </body>
 </html>
